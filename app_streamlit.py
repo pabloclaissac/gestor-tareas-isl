@@ -1,103 +1,205 @@
+# app_streamlit.py
 import streamlit as st
 import pandas as pd
+import sqlite3
+from modelo_tarea import Tarea
 import io
 
-# Simulando una base de datos temporal
-if 'df_tareas' not in st.session_state:
-    st.session_state.df_tareas = pd.DataFrame({
-        'ID': [1, 2, 3, 4],
-        'Estado': ['Terminada', 'Terminada', 'Pendiente', 'Pendiente'],
-        'Tarea': ['OneDrive', 'Informe PAC', 'Revisar presupuesto', 'Enviar reporte'],
-        'Acciones': ['Actualizar OneDrive', 'Solicitar PAC', 'Analizar costos', 'Redactar informe'],
-        'Terminado': [True, True, False, False],
-        'Delegada': [False, False, True, False],
-        'F_Inicio': ['2025-02-10', '2025-02-11', '2025-02-12', '2025-02-13'],
-        'Plazo': ['2025-02-15', '2025-02-16', '2025-02-20', '2025-02-25']
-    })
+DB_NAME = "tareas.db"
 
-df = st.session_state.df_tareas
+def conectar():
+    return sqlite3.connect(DB_NAME)
 
-# === Estilo CSS ===
-st.markdown("""
-    <style>
-    .centered {text-align: center;}
-    .button-bar button {
-        margin-right: 10px;
-        background-color: #0F69B4;
-        color: white;
-        border-radius: 5px;
-    }
-    .scrollable-table {
-        overflow-y: auto;
-        height: 500px;
-    }
-    th, td {
-        text-align: center !important;
-        padding: 10px;
-    }
-    </style>
-""", unsafe_allow_html=True)
+def init_db():
+    conn = conectar()
+    c = conn.cursor()
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS tareas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            estado TEXT,
+            nombre TEXT,
+            compromiso TEXT,
+            terminado INTEGER,
+            delegada INTEGER,
+            fecha_inicio TEXT,
+            plazo TEXT,
+            fecha_realizacion TEXT,
+            observaciones TEXT
+        )
+    ''')
+    conn.commit()
+    conn.close()
 
-# === ENCABEZADO ===
-st.markdown("<h2 class='centered'>Compromisos OCT</h2>", unsafe_allow_html=True)
+def obtener_todas():
+    conn = conectar()
+    df = pd.read_sql_query("SELECT * FROM tareas", conn)
+    conn.close()
+    return df
 
+def agregar_tarea(tarea: Tarea):
+    conn = conectar()
+    c = conn.cursor()
+    c.execute('''
+        INSERT INTO tareas (
+            estado, nombre, compromiso, terminado, delegada,
+            fecha_inicio, plazo, fecha_realizacion, observaciones
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (
+        tarea.estado,
+        tarea.nombre,
+        tarea.compromiso,
+        tarea.terminado,
+        tarea.delegada,
+        tarea.fecha_inicio,
+        tarea.plazo,
+        tarea.fecha_realizacion,
+        tarea.observaciones
+    ))
+    conn.commit()
+    conn.close()
+
+def eliminar_tarea(id_tarea):
+    conn = conectar()
+    c = conn.cursor()
+    c.execute("DELETE FROM tareas WHERE id = ?", (id_tarea,))
+    conn.commit()
+    conn.close()
+
+def actualizar_tarea(tarea: Tarea):
+    conn = conectar()
+    c = conn.cursor()
+    c.execute('''
+        UPDATE tareas
+        SET estado = ?, nombre = ?, compromiso = ?, terminado = ?, delegada = ?,
+            fecha_inicio = ?, plazo = ?, fecha_realizacion = ?, observaciones = ?
+        WHERE id = ?
+    ''', (
+        tarea.estado,
+        tarea.nombre,
+        tarea.compromiso,
+        tarea.terminado,
+        tarea.delegada,
+        tarea.fecha_inicio,
+        tarea.plazo,
+        tarea.fecha_realizacion,
+        tarea.observaciones,
+        tarea.id
+    ))
+    conn.commit()
+    conn.close()
+
+# === INICIALIZACIÓN ===
+init_db()
+df_tareas = obtener_todas()
+total_tareas = len(df_tareas)
+completadas = df_tareas['terminado'].sum() if total_tareas > 0 else 0
+pendientes = total_tareas - completadas
+
+st.set_page_config(page_title="Compromisos OCT", layout="wide")
+st.markdown("<h2 style='text-align:center;'>Compromisos OCT</h2>", unsafe_allow_html=True)
+
+# === HEADER INDICADORES ===
 col1, col2 = st.columns(2)
 with col1:
-    st.metric("Tareas Completadas", df['Terminado'].sum())
+    st.metric("Tareas Completadas", f"{int(completadas)} / {total_tareas}")
 with col2:
-    st.metric("Tareas Pendientes", (df['Terminado'] == False).sum())
+    st.metric("Tareas Pendientes", f"{int(pendientes)} / {total_tareas}")
 
-# === FORMULARIO ===
-st.subheader("Ingreso / Edición de Tareas")
-with st.form("form_tarea"):
-    col1, col2 = st.columns(2)
-    with col1:
-        tarea = st.text_input("Tarea")
-        acciones = st.text_input("Acciones a Realizar")
-        terminado = st.checkbox("Terminado")
-    with col2:
-        delegada = st.checkbox("Delegada")
-        fecha_inicio = st.date_input("F. Inicio")
+st.markdown("<hr style='margin:5px;'>", unsafe_allow_html=True)
+
+# === DISEÑO DOS COLUMNAS ===
+left_col, right_col = st.columns([1,2], gap="large")
+
+# === FORMULARIO IZQUIERDA ===
+with left_col:
+    st.subheader("Ingreso / Edición de Tarea")
+    if 'modo_edicion' not in st.session_state:
+        st.session_state.modo_edicion = False
+        st.session_state.tarea_editando = None
+
+    if st.session_state.modo_edicion:
+        tarea = st.session_state.tarea_editando
+        nombre = st.text_input("Tarea", value=tarea['nombre'])
+        compromiso = st.text_input("Acciones a Realizar", value=tarea['compromiso'])
+        plazo = st.date_input("Plazo", value=pd.to_datetime(tarea['plazo']))
+        observaciones = st.text_area("Observaciones", value=tarea['observaciones'])
+        terminado = st.checkbox("Terminada", value=bool(tarea['terminado']))
+        delegada = st.checkbox("Delegada", value=bool(tarea['delegada']))
+
+        if st.button("Guardar cambios"):
+            tarea_actualizada = Tarea(
+                id=tarea['id'],
+                estado="Terminada" if terminado else "Pendiente",
+                nombre=nombre,
+                compromiso=compromiso,
+                terminado=int(terminado),
+                delegada=int(delegada),
+                fecha_inicio=tarea['fecha_inicio'],
+                plazo=str(plazo),
+                fecha_realizacion=tarea['fecha_realizacion'],
+                observaciones=observaciones
+            )
+            actualizar_tarea(tarea_actualizada)
+            st.success("Tarea actualizada correctamente.")
+            st.session_state.modo_edicion = False
+            st.experimental_rerun()
+    else:
+        nombre = st.text_input("Tarea")
+        compromiso = st.text_input("Acciones a Realizar")
+        fecha_inicio = st.date_input("Fecha de Inicio")
         plazo = st.date_input("Plazo")
+        observaciones = st.text_area("Observaciones")
+        terminado = st.checkbox("Terminada")
+        delegada = st.checkbox("Delegada")
 
-    submitted = st.form_submit_button("Guardar")
-    if submitted:
-        new_id = df['ID'].max() + 1 if not df.empty else 1
-        nuevo = {
-            'ID': new_id,
-            'Estado': 'Terminada' if terminado else 'Pendiente',
-            'Tarea': tarea,
-            'Acciones': acciones,
-            'Terminado': terminado,
-            'Delegada': delegada,
-            'F_Inicio': fecha_inicio,
-            'Plazo': plazo
-        }
-        st.session_state.df_tareas = pd.concat([df, pd.DataFrame([nuevo])], ignore_index=True)
-        st.experimental_rerun()
+        if st.button("Agregar Tarea"):
+            tarea = Tarea(
+                id=None,
+                estado="Terminada" if terminado else "Pendiente",
+                nombre=nombre,
+                compromiso=compromiso,
+                terminado=int(terminado),
+                delegada=int(delegada),
+                fecha_inicio=str(fecha_inicio),
+                plazo=str(plazo),
+                fecha_realizacion=str(fecha_inicio) if terminado else "",
+                observaciones=observaciones
+            )
+            agregar_tarea(tarea)
+            st.success("Tarea agregada correctamente.")
+            st.experimental_rerun()
 
-# === LISTADO DE TAREAS ===
-st.subheader("Listado de Tareas")
-st.markdown("<div class='scrollable-table'>", unsafe_allow_html=True)
-st.dataframe(st.session_state.df_tareas, hide_index=True)
-st.markdown("</div>", unsafe_allow_html=True)
-
-# === BARRA DE BOTONES ===
-st.markdown("""
-<div class='button-bar'>
-    <button>Agregar tarea</button>
-    <button>Eliminar</button>
-    <button>Editar</button>
-    <button>Ver detalle</button>
-    <button>Exportar a Excel</button>
-    <button>Importar desde Excel</button>
-</div>
-""", unsafe_allow_html=True)
+# === LISTADO DE TAREAS DERECHA ===
+with right_col:
+    st.subheader("Listado de Tareas")
+    for index, row in df_tareas.iterrows():
+        with st.container(border=True):
+            st.markdown(f"**{row['nombre']}** - {row['estado']}")
+            st.caption(f"Plazo: {row['plazo']} | Delegada: {'✅' if row['delegada'] else '❌'} | Terminado: {'✅' if row['terminado'] else '❌'}")
+            st.caption(f"Acciones: {row['compromiso']}")
+            col1, col2, col3 = st.columns(3)
+            if col1.button("Editar", key=f"editar_{row['id']}"):
+                st.session_state.modo_edicion = True
+                st.session_state.tarea_editando = row
+                st.experimental_rerun()
+            if col2.button("Eliminar", key=f"eliminar_{row['id']}"):
+                eliminar_tarea(row['id'])
+                st.experimental_rerun()
+            if col3.button("Ver Detalle", key=f"detalle_{row['id']}"):
+                st.info(f"Observaciones: {row['observaciones'] or 'Sin observaciones'}")
 
 # === EXPORTAR A EXCEL ===
-excel_buffer = io.BytesIO()
-st.session_state.df_tareas.to_excel(excel_buffer, index=False)
-st.download_button("Descargar Excel", data=excel_buffer.getvalue(), file_name="tareas.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+buffer = io.BytesIO()
+df_tareas.to_excel(buffer, index=False)
+st.download_button(
+    label="Exportar a Excel",
+    data=buffer.getvalue(),
+    file_name="tareas_exportadas.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+)
+
+st.markdown("<style>div[data-testid=column] {align-items: flex-start !important;} .stContainer {overflow: auto;} </style>", unsafe_allow_html=True)
+
 
 
 
