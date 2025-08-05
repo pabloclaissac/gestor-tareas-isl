@@ -5,7 +5,7 @@ import io
 
 DB_NAME = "tareas.db"
 
-# === BASE DE DATOS ===
+# === FUNCIONES BASE DE DATOS ===
 def conectar():
     return sqlite3.connect(DB_NAME)
 
@@ -17,35 +17,32 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             nombre TEXT,
             compromiso TEXT,
+            terminado INTEGER,
+            delegada INTEGER,
+            fecha_inicio TEXT,
             plazo TEXT,
-            observaciones TEXT,
-            terminado INTEGER DEFAULT 0
+            fecha_realizacion TEXT,
+            observaciones TEXT
         )
     ''')
     conn.commit()
     conn.close()
 
-# === CRUD ===
-def obtener_tareas():
+def obtener_todas():
     conn = conectar()
     df = pd.read_sql_query("SELECT * FROM tareas", conn)
     conn.close()
     return df
 
-def agregar_tarea(nombre, compromiso, plazo, observaciones):
-    conn = conectar()
-    c = conn.cursor()
-    c.execute('''INSERT INTO tareas (nombre, compromiso, plazo, observaciones, terminado) VALUES (?, ?, ?, ?, 0)''',
-              (nombre, compromiso, plazo, observaciones))
-    conn.commit()
-    conn.close()
-
-def actualizar_tarea(id_tarea, nombre, compromiso, plazo, observaciones, terminado):
+def agregar_tarea(tarea):
     conn = conectar()
     c = conn.cursor()
     c.execute('''
-        UPDATE tareas SET nombre = ?, compromiso = ?, plazo = ?, observaciones = ?, terminado = ? WHERE id = ?
-    ''', (nombre, compromiso, plazo, observaciones, terminado, id_tarea))
+        INSERT INTO tareas (
+            nombre, compromiso, terminado, delegada,
+            fecha_inicio, plazo, fecha_realizacion, observaciones
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ''', tarea)
     conn.commit()
     conn.close()
 
@@ -56,69 +53,118 @@ def eliminar_tarea(id_tarea):
     conn.commit()
     conn.close()
 
-# === INICIO ===
-init_db()
-st.set_page_config(layout="wide", page_title="Gestor Tareas ISL")
-st.title("Gestor de Tareas ISL")
+def actualizar_tarea(tarea):
+    conn = conectar()
+    c = conn.cursor()
+    c.execute('''
+        UPDATE tareas
+        SET nombre = ?, compromiso = ?, terminado = ?, delegada = ?,
+            fecha_inicio = ?, plazo = ?, fecha_realizacion = ?, observaciones = ?
+        WHERE id = ?
+    ''', tarea)
+    conn.commit()
+    conn.close()
 
-# === LAYOUT ===
-col_form, col_tareas = st.columns([1, 2], gap="large")
+# === INICIO APP ===
+init_db()
+df_tareas = obtener_todas()
+
+st.set_page_config(layout="wide", page_title="Compromisos OCT")
+st.markdown("<h1 style='text-align: center; color: #0F69B4;'>Compromisos OCT - ISL</h1>", unsafe_allow_html=True)
+
+# === ÁREA 1: Estadísticas ===
+total_tareas = len(df_tareas)
+completadas = df_tareas['terminado'].sum() if total_tareas > 0 else 0
+pendientes = total_tareas - completadas
+
+col1, col2 = st.columns(2)
+col1.metric("Tareas Completadas", f"{int(completadas)} / {total_tareas}")
+col2.metric("Tareas Pendientes", f"{int(pendientes)} / {total_tareas}")
+
+st.progress(completadas/total_tareas if total_tareas > 0 else 0.01)
+
+st.markdown("---")
+
+# === ÁREA 2: Formulario + Lista de Tareas ===
+col_form, col_lista = st.columns([1, 2], gap="large")
 
 # === FORMULARIO ===
 with col_form:
-    st.subheader("Nueva Tarea")
-    nombre = st.text_input("Tarea")
-    compromiso = st.text_input("Acciones a realizar")
-    plazo = st.date_input("Plazo")
-    observaciones = st.text_area("Observaciones")
+    st.subheader("Ingreso / Edición de Tareas")
+    with st.form("form_tarea"):
+        nombre = st.text_input("Tarea")
+        compromiso = st.text_input("Acciones a realizar")
+        fecha_inicio = st.date_input("Fecha de Inicio")
+        plazo = st.date_input("Plazo")
+        observaciones = st.text_area("Observaciones")
+        terminado = st.checkbox("Terminada", False)
+        delegada = st.checkbox("Delegada", False)
 
-    col1, col2 = st.columns(2)
-    if col1.button("Guardar Tarea"):
-        if nombre.strip() != "":
-            agregar_tarea(nombre, compromiso, str(plazo), observaciones)
+        submitted = st.form_submit_button("Guardar Tarea")
+
+        if submitted:
+            tarea = (
+                nombre,
+                compromiso,
+                int(terminado),
+                int(delegada),
+                str(fecha_inicio),
+                str(plazo),
+                str(fecha_inicio) if terminado else "",
+                observaciones
+            )
+            agregar_tarea(tarea)
             st.success("Tarea guardada correctamente.")
             st.experimental_rerun()
-        else:
-            st.warning("Debe ingresar un nombre de tarea.")
-    if col2.button("Limpiar Formulario"):
-        st.experimental_rerun()
 
-# === EXPORTAR ===
-df = obtener_tareas()
-if not df.empty:
-    buffer = io.BytesIO()
-    df.to_excel(buffer, index=False)
-    st.download_button("📥 Exportar a Excel", data=buffer.getvalue(), file_name="tareas_exportadas.xlsx")
+    if st.button("📥 Exportar a Excel"):
+        buffer = io.BytesIO()
+        df_tareas.to_excel(buffer, index=False)
+        st.download_button(
+            label="Descargar Excel",
+            data=buffer.getvalue(),
+            file_name="tareas_exportadas.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
 
 # === LISTADO DE TAREAS ===
-with col_tareas:
-    st.subheader("Tareas Registradas")
-    if df.empty:
-        st.info("No hay tareas registradas.")
-    else:
-        for idx, row in df.iterrows():
-            with st.container(border=True):
-                st.markdown(f"#### {row['nombre']}")
-                st.markdown(f"**Acciones:** {row['compromiso']}")
-                st.markdown(f"**Plazo:** {row['plazo']}")
-                st.markdown(f"**Observaciones:** {row['observaciones'] or 'Sin observaciones'}")
-                terminado = st.checkbox("Terminada", value=bool(row['terminado']), key=f"chk_{row['id']}")
+with col_lista:
+    st.subheader("Listado de Tareas")
+    st.dataframe(df_tareas, height=600, use_container_width=True)
 
-                with st.expander("Editar Tarea"):
-                    new_nombre = st.text_input("Tarea", value=row['nombre'], key=f"edit_nombre_{row['id']}")
-                    new_compromiso = st.text_input("Acciones", value=row['compromiso'], key=f"edit_compromiso_{row['id']}")
-                    new_plazo = st.date_input("Plazo", value=pd.to_datetime(row['plazo']), key=f"edit_plazo_{row['id']}")
-                    new_observaciones = st.text_area("Observaciones", value=row['observaciones'], key=f"edit_obs_{row['id']}")
+    for index, row in df_tareas.iterrows():
+        col_edit, col_delete = st.columns([1, 1])
+        with col_edit:
+            if st.button("✏️ Editar", key=f"editar_{row['id']}"):
+                with st.form(f"form_edit_{row['id']}"):
+                    nombre = st.text_input("Tarea", value=row['nombre'])
+                    compromiso = st.text_input("Acciones", value=row['compromiso'])
+                    plazo = st.date_input("Plazo", value=pd.to_datetime(row['plazo']) if row['plazo'] else pd.Timestamp.now())
+                    observaciones = st.text_area("Observaciones", value=row['observaciones'] or "")
+                    terminado = st.checkbox("Terminada", value=bool(row['terminado']))
+                    delegada = st.checkbox("Delegada", value=bool(row['delegada']))
+                    submitted_edit = st.form_submit_button("Guardar Cambios")
 
-                    if st.button("Guardar Cambios", key=f"btn_guardar_{row['id']}"):
-                        actualizar_tarea(row['id'], new_nombre, new_compromiso, str(new_plazo), new_observaciones, int(terminado))
+                    if submitted_edit:
+                        tarea = (
+                            nombre,
+                            compromiso,
+                            int(terminado),
+                            int(delegada),
+                            row['fecha_inicio'],
+                            str(plazo),
+                            row['fecha_realizacion'],
+                            observaciones,
+                            row['id']
+                        )
+                        actualizar_tarea(tarea)
                         st.success("Tarea actualizada.")
                         st.experimental_rerun()
-
-                if st.button("🗑️ Eliminar", key=f"btn_eliminar_{row['id']}"):
-                    eliminar_tarea(row['id'])
-                    st.warning("Tarea eliminada.")
-                    st.experimental_rerun()
+        with col_delete:
+            if st.button("🗑️ Eliminar", key=f"eliminar_{row['id']}"):
+                eliminar_tarea(row['id'])
+                st.warning(f"Tarea {row['nombre']} eliminada.")
+                st.experimental_rerun()
 
 
 
