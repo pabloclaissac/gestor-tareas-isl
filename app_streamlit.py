@@ -2,11 +2,12 @@
 import streamlit as st
 import pandas as pd
 import sqlite3
-from modelo_tarea import Tarea
 import io
+from modelo_tarea import Tarea
 
 DB_NAME = "tareas.db"
 
+# === FUNCIONES BASE DE DATOS ===
 def conectar():
     return sqlite3.connect(DB_NAME)
 
@@ -90,115 +91,111 @@ def actualizar_tarea(tarea: Tarea):
 
 # === INICIALIZACIÓN ===
 init_db()
-df_tareas = obtener_todas()
-total_tareas = len(df_tareas)
-completadas = df_tareas['terminado'].sum() if total_tareas > 0 else 0
-pendientes = total_tareas - completadas
-
 st.set_page_config(page_title="Compromisos OCT", layout="wide")
-st.markdown("<h2 style='text-align:center;'>Compromisos OCT</h2>", unsafe_allow_html=True)
 
-# === HEADER INDICADORES ===
-col1, col2 = st.columns(2)
-with col1:
-    st.metric("Tareas Completadas", f"{int(completadas)} / {total_tareas}")
-with col2:
-    st.metric("Tareas Pendientes", f"{int(pendientes)} / {total_tareas}")
+# === CARGA DE DATOS ===
+df_tareas = obtener_todas()
+query_params = st.query_params
 
-st.markdown("<hr style='margin:5px;'>", unsafe_allow_html=True)
+if 'selected_task' not in st.session_state:
+    st.session_state.selected_task = None
 
-# === DISEÑO DOS COLUMNAS ===
-left_col, right_col = st.columns([1,2], gap="large")
-
-# === FORMULARIO IZQUIERDA ===
-with left_col:
-    st.subheader("Ingreso / Edición de Tarea")
-    if 'modo_edicion' not in st.session_state:
-        st.session_state.modo_edicion = False
-        st.session_state.tarea_editando = None
-
-    if st.session_state.modo_edicion:
-        tarea = st.session_state.tarea_editando
-        nombre = st.text_input("Tarea", value=tarea['nombre'])
-        compromiso = st.text_input("Acciones a Realizar", value=tarea['compromiso'])
-        plazo = st.date_input("Plazo", value=pd.to_datetime(tarea['plazo']))
-        observaciones = st.text_area("Observaciones", value=tarea['observaciones'])
-        terminado = st.checkbox("Terminada", value=bool(tarea['terminado']))
-        delegada = st.checkbox("Delegada", value=bool(tarea['delegada']))
-
-        if st.button("Guardar cambios"):
-            tarea_actualizada = Tarea(
-                id=tarea['id'],
-                estado="Terminada" if terminado else "Pendiente",
-                nombre=nombre,
-                compromiso=compromiso,
-                terminado=int(terminado),
-                delegada=int(delegada),
-                fecha_inicio=tarea['fecha_inicio'],
-                plazo=str(plazo),
-                fecha_realizacion=tarea['fecha_realizacion'],
-                observaciones=observaciones
-            )
-            actualizar_tarea(tarea_actualizada)
-            st.success("Tarea actualizada correctamente.")
-            st.session_state.modo_edicion = False
-            st.experimental_rerun()
+# === SIDEBAR ===
+st.sidebar.header("Gestión de Tareas")
+with st.sidebar.form("form_tarea"):
+    if st.session_state.selected_task:
+        task = df_tareas[df_tareas['id'] == st.session_state.selected_task].iloc[0]
+        nombre = st.text_input("Tarea", value=task['nombre'])
+        compromiso = st.text_input("Acciones a realizar", value=task['compromiso'])
+        fecha_inicio = st.date_input("Fecha de Inicio", pd.to_datetime(task['fecha_inicio']))
+        plazo = st.date_input("Plazo", pd.to_datetime(task['plazo']))
+        observaciones = st.text_area("Observaciones", value=task['observaciones'] or "")
+        terminado = st.checkbox("Terminada", value=bool(task['terminado']))
+        delegada = st.checkbox("Delegada", value=bool(task['delegada']))
     else:
         nombre = st.text_input("Tarea")
-        compromiso = st.text_input("Acciones a Realizar")
+        compromiso = st.text_input("Acciones a realizar")
         fecha_inicio = st.date_input("Fecha de Inicio")
         plazo = st.date_input("Plazo")
         observaciones = st.text_area("Observaciones")
         terminado = st.checkbox("Terminada")
         delegada = st.checkbox("Delegada")
 
-        if st.button("Agregar Tarea"):
-            tarea = Tarea(
-                id=None,
-                estado="Terminada" if terminado else "Pendiente",
-                nombre=nombre,
-                compromiso=compromiso,
-                terminado=int(terminado),
-                delegada=int(delegada),
-                fecha_inicio=str(fecha_inicio),
-                plazo=str(plazo),
-                fecha_realizacion=str(fecha_inicio) if terminado else "",
-                observaciones=observaciones
-            )
-            agregar_tarea(tarea)
-            st.success("Tarea agregada correctamente.")
-            st.experimental_rerun()
+    col1, col2 = st.columns(2)
+    submitted = col1.form_submit_button("Guardar")
+    limpiar = col2.form_submit_button("Limpiar formulario")
 
-# === LISTADO DE TAREAS DERECHA ===
-with right_col:
-    st.subheader("Listado de Tareas")
-    for index, row in df_tareas.iterrows():
-        with st.container(border=True):
-            st.markdown(f"**{row['nombre']}** - {row['estado']}")
-            st.caption(f"Plazo: {row['plazo']} | Delegada: {'✅' if row['delegada'] else '❌'} | Terminado: {'✅' if row['terminado'] else '❌'}")
-            st.caption(f"Acciones: {row['compromiso']}")
-            col1, col2, col3 = st.columns(3)
-            if col1.button("Editar", key=f"editar_{row['id']}"):
-                st.session_state.modo_edicion = True
-                st.session_state.tarea_editando = row
-                st.experimental_rerun()
-            if col2.button("Eliminar", key=f"eliminar_{row['id']}"):
-                eliminar_tarea(row['id'])
-                st.experimental_rerun()
-            if col3.button("Ver Detalle", key=f"detalle_{row['id']}"):
-                st.info(f"Observaciones: {row['observaciones'] or 'Sin observaciones'}")
+    if submitted:
+        tarea = Tarea(
+            id=st.session_state.selected_task,
+            estado="Terminada" if terminado else "Pendiente",
+            nombre=nombre,
+            compromiso=compromiso,
+            terminado=int(terminado),
+            delegada=int(delegada),
+            fecha_inicio=str(fecha_inicio),
+            plazo=str(plazo),
+            fecha_realizacion=str(fecha_inicio) if terminado else "",
+            observaciones=observaciones
+        )
+        if st.session_state.selected_task:
+            actualizar_tarea(tarea)
+            st.success("Tarea actualizada.")
+        else:
+            agregar_tarea(tarea)
+            st.success("Tarea agregada.")
+        st.session_state.selected_task = None
+        st.rerun()
+
+    if limpiar:
+        st.session_state.selected_task = None
+        st.rerun()
+
+# === HEADER MÉTRICAS ===
+st.title("Compromisos OCT - ISL")
+col1, col2 = st.columns(2)
+col1.metric("Tareas Completadas", f"{df_tareas['terminado'].sum()} / {len(df_tareas)}")
+col2.metric("Tareas Pendientes", f"{len(df_tareas) - df_tareas['terminado'].sum()} / {len(df_tareas)}")
+
+st.progress(df_tareas['terminado'].sum()/len(df_tareas) if len(df_tareas) > 0 else 0.01)
 
 # === EXPORTAR A EXCEL ===
 buffer = io.BytesIO()
 df_tareas.to_excel(buffer, index=False)
 st.download_button(
-    label="Exportar a Excel",
+    label="📥 Exportar a Excel",
     data=buffer.getvalue(),
     file_name="tareas_exportadas.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
 
-st.markdown("<style>div[data-testid=column] {align-items: flex-start !important;} .stContainer {overflow: auto;} </style>", unsafe_allow_html=True)
+# === LISTADO DE TAREAS ===
+st.markdown("---")
+st.subheader("Listado de Tareas")
+
+for _, row in df_tareas.iterrows():
+    color = "#d4edda" if row['terminado'] else "#f8d7da"
+    with st.container():
+        st.markdown(f"""
+            <div style='background-color:{color};padding:10px;margin-bottom:10px;border-radius:10px;'>
+                <strong>{row['nombre']}</strong> - {row['estado']}<br>
+                <em>{row['compromiso']}</em><br>
+                Plazo: {row['plazo']}, Delegada: {'✅' if row['delegada'] else '❌'}<br>
+                Observaciones: {row['observaciones'] or 'Sin observaciones'}<br>
+            </div>
+        """, unsafe_allow_html=True)
+
+        col1, col2 = st.columns([1, 1])
+        if col1.button("✏️ Editar", key=f"edit_{row['id']}"):
+            st.session_state.selected_task = row['id']
+            st.rerun()
+        if col2.button("🗑️ Eliminar", key=f"delete_{row['id']}"):
+            eliminar_tarea(row['id'])
+            st.success("Tarea eliminada.")
+            st.rerun()
+
+
+
 
 
 
