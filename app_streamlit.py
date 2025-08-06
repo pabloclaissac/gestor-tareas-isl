@@ -23,7 +23,8 @@ def migrar_esquema():
                     plazo TEXT,
                     observaciones TEXT,
                     estado TEXT DEFAULT 'Pendiente',
-                    delegada TEXT
+                    delegada TEXT,
+                    fecha_termino TEXT
                 )
             ''')
             
@@ -37,6 +38,13 @@ def migrar_esquema():
             conn.execute("ALTER TABLE tareas_nueva RENAME TO tareas")
             conn.commit()
             st.success("Esquema de base de datos actualizado exitosamente")
+        
+        # Agregar columna fecha_termino si no existe
+        cursor = conn.execute("PRAGMA table_info(tareas)")
+        columnas = [col[1] for col in cursor.fetchall()]
+        if 'fecha_termino' not in columnas:
+            conn.execute("ALTER TABLE tareas ADD COLUMN fecha_termino TEXT")
+            conn.commit()
 
 def init_db():
     migrar_esquema()
@@ -51,7 +59,8 @@ def init_db():
                 plazo TEXT,
                 observaciones TEXT,
                 estado TEXT DEFAULT 'Pendiente',
-                delegada TEXT
+                delegada TEXT,
+                fecha_termino TEXT
             )
         ''')
         conn.commit()
@@ -72,27 +81,65 @@ def obtener_tarea_por_id(id):
         return None
 
 def agregar_tarea(tarea, acciones, fecha_inicio, plazo, observaciones, delegada, estado, exportar=True):
+    fecha_termino = datetime.now().strftime("%Y-%m-%d") if estado == 'Terminada' else None
     with sqlite3.connect(DB_FILE) as conn:
         conn.execute('''
-            INSERT INTO tareas (tarea, acciones, fecha_inicio, plazo, observaciones, delegada, estado)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''', (tarea, acciones, fecha_inicio, plazo, observaciones, delegada, estado))
+            INSERT INTO tareas (tarea, acciones, fecha_inicio, plazo, observaciones, delegada, estado, fecha_termino)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (tarea, acciones, fecha_inicio, plazo, observaciones, delegada, estado, fecha_termino))
         conn.commit()
     
     if exportar:
         exportar_a_excel()
 
 def editar_tarea(id, tarea, acciones, fecha_inicio, plazo, observaciones, delegada, estado, exportar=True):
+    # Obtener el estado actual para determinar si necesitamos actualizar la fecha_termino
+    tarea_actual = obtener_tarea_por_id(id)
+    estado_actual = tarea_actual['estado'] if tarea_actual else None
+    
+    # Si el estado cambia a Terminada, establecer fecha_termino
+    if estado == 'Terminada' and estado_actual != 'Terminada':
+        fecha_termino = datetime.now().strftime("%Y-%m-%d")
+    # Si el estado cambia de Terminada a otro, eliminar fecha_termino
+    elif estado != 'Terminada' and estado_actual == 'Terminada':
+        fecha_termino = None
+    else:
+        fecha_termino = tarea_actual.get('fecha_termino') if tarea_actual else None
+    
     with sqlite3.connect(DB_FILE) as conn:
         conn.execute('''
             UPDATE tareas
-            SET tarea = ?, acciones = ?, fecha_inicio = ?, plazo = ?, observaciones = ?, delegada = ?, estado = ?
+            SET tarea = ?, acciones = ?, fecha_inicio = ?, plazo = ?, 
+                observaciones = ?, delegada = ?, estado = ?, fecha_termino = ?
             WHERE id = ?
-        ''', (tarea, acciones, fecha_inicio, plazo, observaciones, delegada, estado, id))
+        ''', (tarea, acciones, fecha_inicio, plazo, observaciones, delegada, estado, fecha_termino, id))
         conn.commit()
     
     if exportar:
         exportar_a_excel()
+
+def actualizar_estado(id, nuevo_estado):
+    tarea = obtener_tarea_por_id(id)
+    if not tarea:
+        return
+    
+    # Si el nuevo estado es Terminada y no lo estaba, establecer fecha_termino
+    if nuevo_estado == 'Terminada' and tarea['estado'] != 'Terminada':
+        fecha_termino = datetime.now().strftime("%Y-%m-%d")
+    # Si cambia de Terminada a otro estado, eliminar fecha_termino
+    elif nuevo_estado != 'Terminada' and tarea['estado'] == 'Terminada':
+        fecha_termino = None
+    else:
+        fecha_termino = tarea.get('fecha_termino')
+    
+    with sqlite3.connect(DB_FILE) as conn:
+        conn.execute('''
+            UPDATE tareas
+            SET estado = ?, fecha_termino = ?
+            WHERE id = ?
+        ''', (nuevo_estado, fecha_termino, id))
+        conn.commit()
+    exportar_a_excel()
 
 def eliminar_tarea(id, exportar=True):
     with sqlite3.connect(DB_FILE) as conn:
@@ -108,11 +155,11 @@ def exportar_a_excel():
     if not tareas_df.empty:
         # Crear un DataFrame con las columnas necesarias
         export_df = tareas_df[['id', 'tarea', 'acciones', 'fecha_inicio', 'plazo', 
-                              'observaciones', 'estado', 'delegada']].copy()
+                              'observaciones', 'estado', 'delegada', 'fecha_termino']].copy()
         
         # Renombrar columnas para mejor presentación
         export_df.columns = ['ID', 'Tarea', 'Acciones a Realizar', 'Fecha Inicio', 
-                            'Plazo', 'Observaciones', 'Estado', 'Delegada a']
+                            'Plazo', 'Observaciones', 'Estado', 'Delegada a', 'F.Término']
         
         # Guardar en Excel
         export_df.to_excel(EXCEL_FILE, index=False)
@@ -135,6 +182,14 @@ def importar_desde_excel():
             st.warning("El archivo Excel está vacío")
             return False
         
+        # Eliminar columnas no reconocidas
+        columnas_esperadas = ['ID', 'Tarea', 'Acciones a Realizar', 'Fecha Inicio', 
+                             'Plazo', 'Observaciones', 'Estado', 'Delegada a', 'F.Término']
+        
+        for col in excel_df.columns:
+            if col not in columnas_esperadas:
+                excel_df = excel_df.drop(columns=[col])
+        
         # Renombrar columnas para coincidir con la base de datos
         column_mapping = {
             'ID': 'id',
@@ -144,7 +199,8 @@ def importar_desde_excel():
             'Plazo': 'plazo',
             'Observaciones': 'observaciones',
             'Estado': 'estado',
-            'Delegada a': 'delegada'
+            'Delegada a': 'delegada',
+            'F.Término': 'fecha_termino'
         }
         excel_df.rename(columns=column_mapping, inplace=True)
         
@@ -170,34 +226,51 @@ def importar_desde_excel():
             if isinstance(plazo, pd.Timestamp):
                 plazo = plazo.strftime('%Y-%m-%d')
             
+            fecha_termino = row['fecha_termino']
+            if isinstance(fecha_termino, pd.Timestamp):
+                fecha_termino = fecha_termino.strftime('%Y-%m-%d')
+            
             # Verificar si la tarea ya existe en la base de datos
             tarea_id = row['id']
             if tarea_id in db_ids:
                 # Actualizar tarea existente
-                editar_tarea(
-                    tarea_id,
-                    row['tarea'],
-                    row['acciones'],
-                    fecha_inicio,
-                    plazo,
-                    row['observaciones'],
-                    row['delegada'],
-                    row['estado'],
-                    exportar=False  # Evitar exportar durante la importación
-                )
+                with sqlite3.connect(DB_FILE) as conn:
+                    conn.execute('''
+                        UPDATE tareas
+                        SET tarea = ?, acciones = ?, fecha_inicio = ?, plazo = ?, 
+                            observaciones = ?, delegada = ?, estado = ?, fecha_termino = ?
+                        WHERE id = ?
+                    ''', (
+                        row['tarea'],
+                        row['acciones'],
+                        fecha_inicio,
+                        plazo,
+                        row['observaciones'],
+                        row['delegada'],
+                        row['estado'],
+                        fecha_termino,
+                        tarea_id
+                    ))
+                    conn.commit()
                 actualizadas += 1
             else:
                 # Insertar como nueva tarea
-                agregar_tarea(
-                    row['tarea'],
-                    row['acciones'],
-                    fecha_inicio,
-                    plazo,
-                    row['observaciones'],
-                    row['delegada'],
-                    row['estado'],
-                    exportar=False  # Evitar exportar durante la importación
-                )
+                with sqlite3.connect(DB_FILE) as conn:
+                    conn.execute('''
+                        INSERT INTO tareas (tarea, acciones, fecha_inicio, plazo, 
+                                          observaciones, delegada, estado, fecha_termino)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (
+                        row['tarea'],
+                        row['acciones'],
+                        fecha_inicio,
+                        plazo,
+                        row['observaciones'],
+                        row['delegada'],
+                        row['estado'],
+                        fecha_termino
+                    ))
+                    conn.commit()
                 nuevas += 1
         
         # Exportar después de todas las operaciones para actualizar el Excel
@@ -236,7 +309,7 @@ def main():
     # Obtener tareas
     tareas_df = obtener_tareas()
     
-    # Pestañas principales - MODIFICADO PARA USAR SELECTBOX EN LUGAR DE TABS
+    # Pestañas principales
     tabs = ["Listado de Tareas", "Agregar Tarea"]
     current_tab = st.selectbox(
         "Seleccione una vista:",
@@ -258,8 +331,11 @@ def main():
                 # Mantener selecciones previas
                 tareas_df['Seleccionar'] = tareas_df['id'].isin(st.session_state["selected_tasks"])
             
+            # Convertir fecha_termino a datetime para mostrar correctamente
+            tareas_df['fecha_termino'] = pd.to_datetime(tareas_df['fecha_termino'], errors='coerce')
+            
             tareas_display = tareas_df[['Seleccionar', 'id', 'estado', 'tarea', 'acciones', 'terminado', 
-                                       'delegada_bool', 'delegada', 'fecha_inicio', 'plazo']]
+                                       'delegada_bool', 'delegada', 'fecha_inicio', 'plazo', 'fecha_termino']]
             
             # Mostrar tabla con selección
             edited_df = st.data_editor(
@@ -274,11 +350,13 @@ def main():
                     "delegada_bool": st.column_config.CheckboxColumn("Delegada"),
                     "delegada": st.column_config.TextColumn("Delegada a"),
                     "fecha_inicio": st.column_config.DateColumn("F. Inicio", format="DD-MM-YYYY"),
-                    "plazo": st.column_config.DateColumn("Plazo", format="DD-MM-YYYY")
+                    "plazo": st.column_config.DateColumn("Plazo", format="DD-MM-YYYY"),
+                    "fecha_termino": st.column_config.DateColumn("F.Término", format="DD-MM-YYYY")
                 },
                 hide_index=True,
                 use_container_width=True,
-                disabled=["id", "estado", "tarea", "acciones", "delegada", "fecha_inicio", "plazo"],
+                disabled=["id", "estado", "tarea", "acciones", "delegada", 
+                          "fecha_inicio", "plazo", "fecha_termino"],
                 key="editor"
             )
             
@@ -286,6 +364,18 @@ def main():
             if "editor" in st.session_state:
                 selected_rows = edited_df[edited_df['Seleccionar'] == True]
                 st.session_state["selected_tasks"] = selected_rows['id'].tolist()
+            
+            # Detectar cambios en la columna "terminado"
+            if 'editor' in st.session_state:
+                # Identificar filas donde terminado cambió a True
+                changed_rows = edited_df[
+                    (edited_df['terminado'] == True) & 
+                    (tareas_display['terminado'] == False)
+                ]
+                
+                for _, row in changed_rows.iterrows():
+                    # Actualizar estado a "Terminada" y establecer fecha_termino
+                    actualizar_estado(row['id'], 'Terminada')
             
             # Botones de acción
             col1, col2, col3 = st.columns(3)
@@ -349,6 +439,18 @@ def main():
                         
                         st.markdown("**Delegada a:**")
                         st.markdown(f"{tarea['delegada'] or 'No delegada'}")
+                        st.divider()
+                        
+                        st.markdown("**Fecha Inicio:**")
+                        st.markdown(f"{tarea['fecha_inicio']}")
+                        st.divider()
+                        
+                        st.markdown("**Plazo:**")
+                        st.markdown(f"{tarea['plazo'] or 'Sin plazo definido'}")
+                        st.divider()
+                        
+                        st.markdown("**Fecha Término:**")
+                        st.markdown(f"{tarea['fecha_termino'] or 'Tarea aún no finalizada'}")
                         
                         col1, col2 = st.columns([1, 3])
                         with col1:
@@ -379,7 +481,8 @@ def main():
                 "plazo": datetime.now().strftime("%Y-%m-%d"),
                 "observaciones": "",
                 "delegada": "",
-                "estado": "Pendiente"
+                "estado": "Pendiente",
+                "fecha_termino": None
             }
             modo = "agregar"
         
