@@ -8,47 +8,8 @@ import numpy as np
 DB_FILE = "tareas.db"
 EXCEL_FILE = "tareas_exportadas.xlsx"
 
-def migrar_esquema():
-    with sqlite3.connect(DB_FILE) as conn:
-        cursor = conn.execute("PRAGMA table_info(tareas)")
-        columnas = [col[1] for col in cursor.fetchall()]
-        
-        if 'nombre' in columnas:
-            conn.execute('''
-                CREATE TABLE IF NOT EXISTS tareas_nueva (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    tarea TEXT NOT NULL,
-                    acciones TEXT,
-                    fecha_inicio TEXT,
-                    plazo TEXT,
-                    observaciones TEXT,
-                    estado TEXT DEFAULT 'Pendiente',
-                    delegada TEXT,
-                    fecha_termino TEXT
-                )
-            ''')
-            
-            conn.execute('''
-                INSERT INTO tareas_nueva (id, tarea, acciones, estado, delegada)
-                SELECT id, nombre, descripcion, estado, responsable
-                FROM tareas
-            ''')
-            
-            conn.execute("DROP TABLE tareas")
-            conn.execute("ALTER TABLE tareas_nueva RENAME TO tareas")
-            conn.commit()
-            st.success("Esquema de base de datos actualizado exitosamente")
-        
-        # Agregar columna fecha_termino si no existe
-        cursor = conn.execute("PRAGMA table_info(tareas)")
-        columnas = [col[1] for col in cursor.fetchall()]
-        if 'fecha_termino' not in columnas:
-            conn.execute("ALTER TABLE tareas ADD COLUMN fecha_termino TEXT")
-            conn.commit()
 
 def init_db():
-    migrar_esquema()
-    
     with sqlite3.connect(DB_FILE) as conn:
         conn.execute('''
             CREATE TABLE IF NOT EXISTS tareas (
@@ -64,6 +25,46 @@ def init_db():
             )
         ''')
         conn.commit()
+
+    migrar_esquema()
+
+def migrar_esquema():
+    with sqlite3.connect(DB_FILE) as conn:
+        cursor = conn.execute("PRAGMA table_info(tareas)")
+        columnas = [col[1] for col in cursor.fetchall()]
+
+        if 'nombre' in columnas:
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS tareas_nueva (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tarea TEXT NOT NULL,
+                    acciones TEXT,
+                    fecha_inicio TEXT,
+                    plazo TEXT,
+                    observaciones TEXT,
+                    estado TEXT DEFAULT 'Pendiente',
+                    delegada TEXT,
+                    fecha_termino TEXT
+                )
+            ''')
+
+            conn.execute('''
+                INSERT INTO tareas_nueva (id, tarea, acciones, estado, delegada)
+                SELECT id, nombre, descripcion, estado, responsable
+                FROM tareas
+            ''')
+
+            conn.execute("DROP TABLE tareas")
+            conn.execute("ALTER TABLE tareas_nueva RENAME TO tareas")
+            conn.commit()
+            st.success("Esquema de base de datos actualizado exitosamente")
+
+        # Asegurarse de que la columna fecha_termino exista
+        cursor = conn.execute("PRAGMA table_info(tareas)")
+        columnas = [col[1] for col in cursor.fetchall()]
+        if 'fecha_termino' not in columnas:
+            conn.execute("ALTER TABLE tareas ADD COLUMN fecha_termino TEXT")
+            conn.commit()
 
 def obtener_tareas():
     with sqlite3.connect(DB_FILE) as conn:
@@ -302,6 +303,8 @@ def main():
         st.session_state["selected_tasks"] = []
     if "reset_counter" not in st.session_state:
         st.session_state["reset_counter"] = 0  # Para resetear formulario
+    if "last_interaction" not in st.session_state:
+        st.session_state["last_interaction"] = {"type": None, "id": None}
 
     # Título principal
     st.markdown("<h1 style='text-align: center;'>Compromisos OCT</h1>", unsafe_allow_html=True)
@@ -337,6 +340,7 @@ def main():
             tareas_display = tareas_df[['Seleccionar', 'id', 'estado', 'tarea', 'acciones', 'terminado', 
                                        'delegada_bool', 'delegada', 'fecha_inicio', 'plazo', 'fecha_termino']]
             
+            
             # Mostrar tabla con selección
             edited_df = st.data_editor(
                 tareas_display,
@@ -359,24 +363,26 @@ def main():
                           "fecha_inicio", "plazo", "fecha_termino"],
                 key="editor"
             )
-            
-            # Actualizar selecciones
-            if "editor" in st.session_state:
-                selected_rows = edited_df[edited_df['Seleccionar'] == True]
-                st.session_state["selected_tasks"] = selected_rows['id'].tolist()
-            
-            # Detectar cambios en la columna "terminado"
-            if 'editor' in st.session_state:
-                # Identificar filas donde terminado cambió a True
-                changed_rows = edited_df[
-                    (edited_df['terminado'] == True) & 
-                    (tareas_display['terminado'] == False)
-                ]
-                
-                for _, row in changed_rows.iterrows():
-                    # Actualizar estado a "Terminada" y establecer fecha_termino
-                    actualizar_estado(row['id'], 'Terminada')
-            
+
+            seleccionados_actuales = edited_df[edited_df['Seleccionar'] == True]['id'].tolist()
+            terminados_actuales = edited_df[edited_df['terminado'] == True]['id'].tolist()
+
+            if len(seleccionados_actuales) > 1:
+                ultima = seleccionados_actuales[-1]
+                edited_df['Seleccionar'] = edited_df['id'] == ultima
+                st.session_state["selected_tasks"] = [ultima]
+                st.rerun()
+            elif len(seleccionados_actuales) == 1:
+                st.session_state["selected_tasks"] = seleccionados_actuales
+
+            for _, row in edited_df.iterrows():
+                tarea_original = tareas_df[tareas_df['id'] == row['id']].iloc[0]
+                if row['terminado'] != tarea_original['terminado']:
+                    nuevo_estado = 'Terminada' if row['terminado'] else 'Pendiente'
+                    actualizar_estado(row['id'], nuevo_estado)
+                    st.rerun()
+
+
             # Botones de acción
             col1, col2, col3 = st.columns(3)
             with col1:
@@ -569,7 +575,6 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 
 
 
