@@ -112,7 +112,7 @@ def exportar_a_excel():
         
         # Renombrar columnas para mejor presentación
         export_df.columns = ['ID', 'Tarea', 'Acciones a Realizar', 'Fecha Inicio', 
-                            'Plazo', 'Observaciones', 'Estado', 'Delegada']
+                            'Plazo', 'Observaciones', 'Estado', 'Delegada a']
         
         # Guardar en Excel
         export_df.to_excel(EXCEL_FILE, index=False)
@@ -144,7 +144,7 @@ def importar_desde_excel():
             'Plazo': 'plazo',
             'Observaciones': 'observaciones',
             'Estado': 'estado',
-            'Delegada': 'delegada'
+            'Delegada a': 'delegada'
         }
         excel_df.rename(columns=column_mapping, inplace=True)
         
@@ -236,20 +236,21 @@ def main():
     # Obtener tareas
     tareas_df = obtener_tareas()
     
-    # Pestañas principales
-    tab_list, tab_add = st.tabs(["Listado de Tareas", "Agregar Tarea"])
-    
-    # Controlador para cambiar pestañas
-    if st.session_state["current_tab"] == "Agregar Tarea":
-        tab_add.write("")
-    else:
-        tab_list.write("")
+    # Pestañas principales - MODIFICADO PARA USAR SELECTBOX EN LUGAR DE TABS
+    tabs = ["Listado de Tareas", "Agregar Tarea"]
+    current_tab = st.selectbox(
+        "Seleccione una vista:",
+        tabs,
+        index=tabs.index(st.session_state["current_tab"])
+    )
     
     # Contenido de la pestaña de listado
-    with tab_list:
+    if current_tab == "Listado de Tareas":
+        st.session_state["current_tab"] = "Listado de Tareas"
         if not tareas_df.empty:
             # Preprocesar datos para visualización
             tareas_df['terminado'] = tareas_df['estado'].apply(lambda x: 1 if x == 'Terminada' else 0)
+            tareas_df['delegada_bool'] = tareas_df['delegada'].apply(lambda x: 1 if x and str(x).strip() != '' else 0)
             
             # Agregar columna de selección
             tareas_df['Seleccionar'] = False
@@ -258,7 +259,7 @@ def main():
                 tareas_df['Seleccionar'] = tareas_df['id'].isin(st.session_state["selected_tasks"])
             
             tareas_display = tareas_df[['Seleccionar', 'id', 'estado', 'tarea', 'acciones', 'terminado', 
-                                       'delegada', 'fecha_inicio', 'plazo']]
+                                       'delegada_bool', 'delegada', 'fecha_inicio', 'plazo']]
             
             # Mostrar tabla con selección
             edited_df = st.data_editor(
@@ -269,8 +270,9 @@ def main():
                     "estado": st.column_config.TextColumn("Estado"),
                     "tarea": st.column_config.TextColumn("Tarea", width="large"),
                     "acciones": st.column_config.TextColumn("Acciones a Realizar", width="large"),
-                    "terminado": st.column_config.CheckboxColumn("Terminado", disabled=True),
-                    "delegada": st.column_config.TextColumn("Delegada"),
+                    "terminado": st.column_config.CheckboxColumn("Terminado"),
+                    "delegada_bool": st.column_config.CheckboxColumn("Delegada"),
+                    "delegada": st.column_config.TextColumn("Delegada a"),
                     "fecha_inicio": st.column_config.DateColumn("F. Inicio", format="DD-MM-YYYY"),
                     "plazo": st.column_config.DateColumn("Plazo", format="DD-MM-YYYY")
                 },
@@ -339,6 +341,14 @@ def main():
                         
                         st.markdown("**Observaciones:**")
                         st.markdown(f"{tarea['observaciones'] or 'Sin observaciones'}")
+                        st.divider()
+                        
+                        st.markdown("**Estado:**")
+                        st.markdown(f"{tarea['estado']}")
+                        st.divider()
+                        
+                        st.markdown("**Delegada a:**")
+                        st.markdown(f"{tarea['delegada'] or 'No delegada'}")
                         
                         col1, col2 = st.columns([1, 3])
                         with col1:
@@ -349,7 +359,8 @@ def main():
             st.info("No hay tareas registradas")
     
     # Contenido de la pestaña de agregar/editar
-    with tab_add:
+    else:  # "Agregar Tarea"
+        st.session_state["current_tab"] = "Agregar Tarea"
         # Si estamos en modo edición, cargamos la tarea desde la base de datos (actualizada)
         if st.session_state["tarea_seleccionada"]:
             tarea_id = st.session_state["tarea_seleccionada"]
@@ -398,7 +409,7 @@ def main():
             plazo = st.date_input("Plazo", value=plazo_val, key=plazo_key)
         
         observaciones = st.text_area("Observaciones", value=tarea["observaciones"], height=100, key=observaciones_key)
-        delegada = st.text_input("Delegada", value=tarea["delegada"], key=delegada_key)
+        delegada = st.text_input("Delegada a", value=tarea["delegada"], key=delegada_key)
         estado = st.selectbox("Estado", 
                               ["Pendiente", "En Proceso", "Terminada"], 
                               index=["Pendiente", "En Proceso", "Terminada"].index(tarea["estado"]) if tarea["estado"] in ["Pendiente", "En Proceso", "Terminada"] else 0, 
