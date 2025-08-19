@@ -4,10 +4,33 @@ import sqlite3
 from datetime import datetime
 import os
 import numpy as np
+import base64  # Añadido para manejar la imagen
 
 DB_FILE = "tareas.db"
 EXCEL_FILE = "tareas_exportadas.xlsx"
 
+# =========================
+# CONVERTIR IMAGEN LOCAL A BASE64
+# =========================
+def image_to_base64(path):
+    try:
+        with open(path, "rb") as img_file:
+            return base64.b64encode(img_file.read()).decode()
+    except FileNotFoundError:
+        st.error(f"Archivo de imagen no encontrado: {path}")
+        return None
+
+# Cargar imagen
+IMAGEN_LOCAL = "LOGO-PROPIO-ISL-2023-CMYK-01.png"
+img_base64 = image_to_base64(IMAGEN_LOCAL)
+img_src = f"data:image/png;base64,{img_base64}" if img_base64 else None
+
+# =========================
+# Configuración del encabezado
+# =========================
+COLOR_FONDO = "#005f99"  # Azul
+TITULO = "Compromisos OCT"
+SUBTITULO = "Coordinación Territorial"
 
 def init_db():
     with sqlite3.connect(DB_FILE) as conn:
@@ -286,6 +309,72 @@ def main():
     st.set_page_config(layout="wide", page_title="Compromisos OCT")
     init_db()
     
+    # Estilos CSS para el encabezado
+    st.markdown(f"""
+    <style>
+        .header-container {{
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: {COLOR_FONDO};
+            height: 85px;
+            width: 100%;
+            color: white;
+            position: relative;
+            margin: -1rem -1rem 1.2rem -1rem;
+        }}
+        .header-logo {{
+            position: absolute;
+            left: 20px;
+            top: 5px;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+        }}
+        .header-logo img {{
+            height: 60px;
+        }}
+        .header-subtitle {{
+            position: absolute;
+            bottom: 5px;
+            left: 20px;
+            font-size: 10px;
+        }}
+        .header-title {{
+            font-size: 20px;
+            font-weight: bold;
+        }}
+    </style>
+    """, unsafe_allow_html=True)
+    
+    # Mostrar encabezado
+    if img_src:
+        st.markdown(f"""
+        <div class="header-container">
+            <div class="header-logo">
+                <img src="{img_src}" alt="Logo">
+            </div>
+            <div class="header-subtitle">{SUBTITULO}</div>
+            <div class="header-title">{TITULO}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        # Fallback si no hay imagen
+        st.markdown(f"""
+        <div style="display: flex; align-items: center; justify-content: center; 
+                    background-color: {COLOR_FONDO}; height: 85px; width: 100%; 
+                    color: white; position: relative; margin: -1rem -1rem 1.2rem -1rem;">
+            <div style="position: absolute; left: 20px; top: 5px; display: flex; 
+                       flex-direction: column; align-items: flex-start;">
+                <div style="font-size: 24px; font-weight: bold;">ISL</div>
+            </div>
+            <div style="position: absolute; bottom: 5px; left: 20px; font-size: 10px;">
+                {SUBTITULO}
+            </div>
+            <div style="font-size: 20px; font-weight: bold;">{TITULO}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
     # Exportar inicialmente si no existe el archivo
     if not os.path.exists(EXCEL_FILE):
         exportar_a_excel()
@@ -306,9 +395,6 @@ def main():
     if "last_interaction" not in st.session_state:
         st.session_state["last_interaction"] = {"type": None, "id": None}
 
-    # Título principal
-    st.markdown("<h1 style='text-align: center;'>Compromisos OCT</h1>", unsafe_allow_html=True)
-    
     # Obtener tareas
     tareas_df = obtener_tareas()
     
@@ -381,7 +467,6 @@ def main():
                     nuevo_estado = 'Terminada' if row['terminado'] else 'Pendiente'
                     actualizar_estado(row['id'], nuevo_estado)
                     st.rerun()
-
 
             # Botones de acción
             col1, col2, col3 = st.columns(3)
@@ -573,24 +658,7 @@ def main():
         st.info(f"Todas las tareas se sincronizan automáticamente con el archivo: {EXCEL_FILE}")
         st.info("Usa el botón 'Importar desde Excel' para cargar datos desde este archivo")
 
+      
+
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
