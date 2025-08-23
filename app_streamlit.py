@@ -29,8 +29,8 @@ img_src = f"data:image/png;base64,{img_base64}" if img_base64 else None
 # Configuración del encabezado
 # =========================
 COLOR_FONDO = "#0F69B4"  # Azul
-TITULO = "Compromisos OCT"
-SUBTITULO = "Sección de Coordinación Territorial"
+TITULO = "COMPROMISOS OCT"
+SUBTITULO = "Coordinación Territorial"
 
 def init_db():
     with sqlite3.connect(DB_FILE) as conn:
@@ -344,6 +344,44 @@ def main():
             font-size: 20px;
             font-weight: bold;
         }}
+        
+        /* Contenedor principal para alargar la tabla */
+        .main-container {{
+            display: flex;
+            flex-direction: column;
+            height: calc(100vh - 150px) !important;
+            min-height: 500px !important;
+        }}
+        
+        /* Contenedor de la tabla para que ocupe el espacio disponible */
+        .table-container {{
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 300px;
+        }}
+        
+        /* La tabla debe expandirse */
+        .stDataFrame, .stDataEditor {{
+            flex: 1;
+            min-height: 200px;
+        }}
+        
+        /* Contenedor de botones al final */
+        .button-container {{
+            margin-top: auto;
+            padding-bottom: 5px !important;
+        }}
+        
+        /* Asegurar que los elementos internos se expandan */
+        div[data-testid="stVerticalBlock"] {{
+            height: 100% !important;
+        }}
+        
+        /* Ajustar el contenedor del data editor */
+        div[data-testid="stHorizontalBlock"] {{
+            height: 100% !important;
+        }}
     </style>
     """, unsafe_allow_html=True)
     
@@ -409,147 +447,156 @@ def main():
     # Contenido de la pestaña de listado
     if current_tab == "Listado de Tareas":
         st.session_state["current_tab"] = "Listado de Tareas"
-        if not tareas_df.empty:
-            # Preprocesar datos para visualización
-            tareas_df['terminado'] = tareas_df['estado'].apply(lambda x: 1 if x == 'Terminada' else 0)
-            tareas_df['delegada_bool'] = tareas_df['delegada'].apply(lambda x: 1 if x and str(x).strip() != '' else 0)
-            
-            # Agregar columna de selección
-            tareas_df['Seleccionar'] = False
-            if st.session_state["selected_tasks"]:
-                # Mantener selecciones previas
-                tareas_df['Seleccionar'] = tareas_df['id'].isin(st.session_state["selected_tasks"])
-            
-            # Convertir fecha_termino a datetime para mostrar correctamente
-            tareas_df['fecha_termino'] = pd.to_datetime(tareas_df['fecha_termino'], errors='coerce')
-            
-            tareas_display = tareas_df[['Seleccionar', 'id', 'estado', 'tarea', 'acciones', 'terminado', 
-                                       'delegada_bool', 'delegada', 'fecha_inicio', 'plazo', 'fecha_termino']]
-            
-            
-            # Mostrar tabla con selección
-            edited_df = st.data_editor(
-                tareas_display,
-                column_config={
-                    "Seleccionar": st.column_config.CheckboxColumn("Seleccionar"),
-                    "id": None,
-                    "estado": st.column_config.TextColumn("Estado"),
-                    "tarea": st.column_config.TextColumn("Tarea", width="large"),
-                    "acciones": st.column_config.TextColumn("Acciones a Realizar", width="large"),
-                    "terminado": st.column_config.CheckboxColumn("Terminado"),
-                    "delegada_bool": st.column_config.CheckboxColumn("Delegada"),
-                    "delegada": st.column_config.TextColumn("Delegada a"),
-                    "fecha_inicio": st.column_config.DateColumn("F. Inicio", format="DD-MM-YYYY"),
-                    "plazo": st.column_config.DateColumn("Plazo", format="DD-MM-YYYY"),
-                    "fecha_termino": st.column_config.DateColumn("F.Término", format="DD-MM-YYYY")
-                },
-                hide_index=True,
-                use_container_width=True,
-                disabled=["id", "estado", "tarea", "acciones", "delegada", 
-                          "fecha_inicio", "plazo", "fecha_termino"],
-                key="editor"
-            )
+        
+        # Contenedor principal con altura definida
+        with st.container():
+            if not tareas_df.empty:
+                # Preprocesar datos para visualización
+                tareas_df['terminado'] = tareas_df['estado'].apply(lambda x: 1 if x == 'Terminada' else 0)
+                tareas_df['delegada_bool'] = tareas_df['delegada'].apply(lambda x: 1 if x and str(x).strip() != '' else 0)
+                
+                # Agregar columna de selección
+                tareas_df['Seleccionar'] = False
+                if st.session_state["selected_tasks"]:
+                    # Mantener selecciones previas
+                    tareas_df['Seleccionar'] = tareas_df['id'].isin(st.session_state["selected_tasks"])
+                
+                # Convertir fecha_termino a datetime para mostrar correctamente
+                tareas_df['fecha_termino'] = pd.to_datetime(tareas_df['fecha_termino'], errors='coerce')
+                
+                tareas_display = tareas_df[['Seleccionar', 'id', 'estado', 'tarea', 'acciones', 'terminado', 
+                                           'delegada_bool', 'delegada', 'fecha_inicio', 'plazo', 'fecha_termino']]
+                
+                # Contenedor para la tabla que se expande
+                with st.container():
+                    # Mostrar tabla con selección
+                    edited_df = st.data_editor(
+                        tareas_display,
+                        column_config={
+                            "Seleccionar": st.column_config.CheckboxColumn("Seleccionar"),
+                            "id": None,
+                            "estado": st.column_config.TextColumn("Estado"),
+                            "tarea": st.column_config.TextColumn("Tarea", width="large"),
+                            "acciones": st.column_config.TextColumn("Acciones a Realizar", width="large"),
+                            "terminado": st.column_config.CheckboxColumn("Terminado"),
+                            "delegada_bool": st.column_config.CheckboxColumn("Delegada"),
+                            "delegada": st.column_config.TextColumn("Delegada a"),
+                            "fecha_inicio": st.column_config.DateColumn("F. Inicio", format="DD-MM-YYYY"),
+                            "plazo": st.column_config.DateColumn("Plazo", format="DD-MM-YYYY"),
+                            "fecha_termino": st.column_config.DateColumn("F.Término", format="DD-MM-YYYY")
+                        },
+                        hide_index=True,
+                        use_container_width=True,
+                        disabled=["id", "estado", "tarea", "acciones", "delegada", 
+                                  "fecha_inicio", "plazo", "fecha_termino"],
+                        key="editor",
+                        height=580  # Altura inicial mínima
+                    )
 
-            seleccionados_actuales = edited_df[edited_df['Seleccionar'] == True]['id'].tolist()
-            terminados_actuales = edited_df[edited_df['terminado'] == True]['id'].tolist()
+                seleccionados_actuales = edited_df[edited_df['Seleccionar'] == True]['id'].tolist()
+                terminados_actuales = edited_df[edited_df['terminado'] == True]['id'].tolist()
 
-            if len(seleccionados_actuales) > 1:
-                ultima = seleccionados_actuales[-1]
-                edited_df['Seleccionar'] = edited_df['id'] == ultima
-                st.session_state["selected_tasks"] = [ultima]
-                st.rerun()
-            elif len(seleccionados_actuales) == 1:
-                st.session_state["selected_tasks"] = seleccionados_actuales
-
-            for _, row in edited_df.iterrows():
-                tarea_original = tareas_df[tareas_df['id'] == row['id']].iloc[0]
-                if row['terminado'] != tarea_original['terminado']:
-                    nuevo_estado = 'Terminada' if row['terminado'] else 'Pendiente'
-                    actualizar_estado(row['id'], nuevo_estado)
+                if len(seleccionados_actuales) > 1:
+                    ultima = seleccionados_actuales[-1]
+                    edited_df['Seleccionar'] = edited_df['id'] == ultima
+                    st.session_state["selected_tasks"] = [ultima]
                     st.rerun()
+                elif len(seleccionados_actuales) == 1:
+                    st.session_state["selected_tasks"] = seleccionados_actuales
 
-            # Botones de acción
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                if st.button("🗑️ Eliminar"):
-                    if st.session_state["selected_tasks"]:
-                        for tarea_id in st.session_state["selected_tasks"]:
-                            eliminar_tarea(tarea_id)
-                        # Limpiamos selección y detalle
-                        st.session_state["selected_tasks"] = []
+                for _, row in edited_df.iterrows():
+                    tarea_original = tareas_df[tareas_df['id'] == row['id']].iloc[0]
+                    if row['terminado'] != tarea_original['terminado']:
+                        nuevo_estado = 'Terminada' if row['terminado'] else 'Pendiente'
+                        actualizar_estado(row['id'], nuevo_estado)
+                        st.rerun()
+
+                # Contenedor de botones al final con margen inferior de 5px
+                with st.container():
+                    st.markdown('<div class="button-container">', unsafe_allow_html=True)
+                    # Botones de acción
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        if st.button("🗑️ Eliminar"):
+                            if st.session_state["selected_tasks"]:
+                                for tarea_id in st.session_state["selected_tasks"]:
+                                    eliminar_tarea(tarea_id)
+                                # Limpiamos selección y detalle
+                                st.session_state["selected_tasks"] = []
+                                st.session_state["ver_detalle"] = None
+                                st.rerun()
+                            else:
+                                st.warning("Selecciona al menos una tarea")
+                    with col2:
+                        if st.button("✏️ Editar"):
+                            if len(st.session_state["selected_tasks"]) == 1:
+                                tarea_id = st.session_state["selected_tasks"][0]
+                                st.session_state["tarea_seleccionada"] = tarea_id
+                                st.session_state["current_tab"] = "Agregar Tarea"
+                                st.rerun()
+                            elif st.session_state["selected_tasks"]:
+                                st.warning("Solo puedes editar una tarea a la vez")
+                            else:
+                                st.warning("Selecciona una tarea primero")
+                    with col3:
+                        if st.button("👁️ Ver Detalle"):
+                            if len(st.session_state["selected_tasks"]) == 1:
+                                tarea_id = st.session_state["selected_tasks"][0]
+                                st.session_state["ver_detalle"] = tarea_id
+                            elif st.session_state["selected_tasks"]:
+                                st.warning("Solo puedes ver el detalle de una tarea a la vez")
+                            else:
+                                st.warning("Selecciona una tarea primero")
+                    st.markdown('</div>', unsafe_allow_html=True)
+                
+                # Mostrar detalle si está seleccionado
+                if st.session_state["ver_detalle"]:
+                    tarea_id = st.session_state["ver_detalle"]
+                    # Obtenemos la tarea de la base de datos actualizada
+                    tarea = obtener_tarea_por_id(tarea_id)
+                    if tarea is None:
+                        st.error("La tarea seleccionada ya no existe")
                         st.session_state["ver_detalle"] = None
                         st.rerun()
                     else:
-                        st.warning("Selecciona al menos una tarea")
-            with col2:
-                if st.button("✏️ Editar"):
-                    if len(st.session_state["selected_tasks"]) == 1:
-                        tarea_id = st.session_state["selected_tasks"][0]
-                        st.session_state["tarea_seleccionada"] = tarea_id
-                        st.session_state["current_tab"] = "Agregar Tarea"
-                        st.rerun()
-                    elif st.session_state["selected_tasks"]:
-                        st.warning("Solo puedes editar una tarea a la vez")
-                    else:
-                        st.warning("Selecciona una tarea primero")
-            with col3:
-                if st.button("👁️ Ver Detalle"):
-                    if len(st.session_state["selected_tasks"]) == 1:
-                        tarea_id = st.session_state["selected_tasks"][0]
-                        st.session_state["ver_detalle"] = tarea_id
-                    elif st.session_state["selected_tasks"]:
-                        st.warning("Solo puedes ver el detalle de una tarea a la vez")
-                    else:
-                        st.warning("Selecciona una tarea primero")
-            
-            # Mostrar detalle si está seleccionado
-            if st.session_state["ver_detalle"]:
-                tarea_id = st.session_state["ver_detalle"]
-                # Obtenemos la tarea de la base de datos actualizada
-                tarea = obtener_tarea_por_id(tarea_id)
-                if tarea is None:
-                    st.error("La tarea seleccionada ya no existe")
-                    st.session_state["ver_detalle"] = None
-                    st.rerun()
-                else:
-                    with st.expander(f"Detalle de la Tarea: {tarea['tarea']}", expanded=True):
-                        st.markdown(f"**Tarea:**\n{tarea['tarea']}")
-                        st.divider()
-                        
-                        st.markdown("**Acciones a Realizar:**")
-                        st.markdown(f"{tarea['acciones']}")
-                        st.divider()
-                        
-                        st.markdown("**Observaciones:**")
-                        st.markdown(f"{tarea['observaciones'] or 'Sin observaciones'}")
-                        st.divider()
-                        
-                        st.markdown("**Estado:**")
-                        st.markdown(f"{tarea['estado']}")
-                        st.divider()
-                        
-                        st.markdown("**Delegada a:**")
-                        st.markdown(f"{tarea['delegada'] or 'No delegada'}")
-                        st.divider()
-                        
-                        st.markdown("**Fecha Inicio:**")
-                        st.markdown(f"{tarea['fecha_inicio']}")
-                        st.divider()
-                        
-                        st.markdown("**Plazo:**")
-                        st.markdown(f"{tarea['plazo'] or 'Sin plazo definido'}")
-                        st.divider()
-                        
-                        st.markdown("**Fecha Término:**")
-                        st.markdown(f"{tarea['fecha_termino'] or 'Tarea aún no finalizada'}")
-                        
-                        col1, col2 = st.columns([1, 3])
-                        with col1:
-                            if st.button("Cerrar Detalle"):
-                                st.session_state["ver_detalle"] = None
-                                st.rerun()
-        else:
-            st.info("No hay tareas registradas")
+                        with st.expander(f"Detalle de la Tarea: {tarea['tarea']}", expanded=True):
+                            st.markdown(f"**Tarea:**\n{tarea['tarea']}")
+                            st.divider()
+                            
+                            st.markdown("**Acciones a Realizar:**")
+                            st.markdown(f"{tarea['acciones']}")
+                            st.divider()
+                            
+                            st.markdown("**Observaciones:**")
+                            st.markdown(f"{tarea['observaciones'] or 'Sin observaciones'}")
+                            st.divider()
+                            
+                            st.markdown("**Estado:**")
+                            st.markdown(f"{tarea['estado']}")
+                            st.divider()
+                            
+                            st.markdown("**Delegada a:**")
+                            st.markdown(f"{tarea['delegada'] or 'No delegada'}")
+                            st.divider()
+                            
+                            st.markdown("**Fecha Inicio:**")
+                            st.markdown(f"{tarea['fecha_inicio']}")
+                            st.divider()
+                            
+                            st.markdown("**Plazo:**")
+                            st.markdown(f"{tarea['plazo'] or 'Sin plazo definido'}")
+                            st.divider()
+                            
+                            st.markdown("**Fecha Término:**")
+                            st.markdown(f"{tarea['fecha_termino'] or 'Tarea aún no finalizada'}")
+                            
+                            col1, col2 = st.columns([1, 3])
+                            with col1:
+                                if st.button("Cerrar Detalle"):
+                                    st.session_state["ver_detalle"] = None
+                                    st.rerun()
+            else:
+                st.info("No hay tareas registradas")
     
     # Contenido de la pestaña de agregar/editar
     else:  # "Agregar Tarea"
@@ -657,8 +704,6 @@ def main():
         # Información sobre el archivo Excel
         st.info(f"Todas las tareas se sincronizan automáticamente con el archivo: {EXCEL_FILE}")
         st.info("Usa el botón 'Importar desde Excel' para cargar datos desde este archivo")
-
-      
 
 if __name__ == "__main__":
     main()
