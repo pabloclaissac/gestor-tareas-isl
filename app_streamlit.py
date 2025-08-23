@@ -30,7 +30,7 @@ img_src = f"data:image/png;base64,{img_base64}" if img_base64 else None
 # =========================
 COLOR_FONDO = "#0F69B4"  # Azul
 TITULO = "COMPROMISOS OCT"
-SUBTITULO = "Coordinación Territorial"
+SUBTITULO = "Sección de Coordinación Territorial"
 
 def init_db():
     with sqlite3.connect(DB_FILE) as conn:
