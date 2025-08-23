@@ -28,7 +28,7 @@ img_src = f"data:image/png;base64,{img_base64}" if img_base64 else None
 # =========================
 # Configuración del encabezado
 # =========================
-COLOR_FONDO = "#005f99"  # Azul
+COLOR_FONDO = "#0F69B4"  # Azul
 TITULO = "Compromisos OCT"
 SUBTITULO = "Sección de Coordinación Territorial"
 
