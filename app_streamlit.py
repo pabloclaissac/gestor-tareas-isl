@@ -8,6 +8,7 @@ import base64  # Añadido para manejar la imagen
 
 DB_FILE = "tareas.db"
 EXCEL_FILE = "tareas_exportadas.xlsx"
+EXCEL_EXPORTADO = "Excel_Exportado.xlsx"  # Nuevo nombre para exportación manual
 
 # =========================
 # CONVERTIR IMAGEN LOCAL A BASE64
@@ -30,7 +31,7 @@ img_src = f"data:image/png;base64,{img_base64}" if img_base64 else None
 # =========================
 COLOR_FONDO = "#0F69B4"  # Azul
 TITULO = "COMPROMISOS OCT"
-SUBTITULO = "Sección de Coordinación Territorial"
+SUBTITULO = "Coordinación Territorial"
 
 def init_db():
     with sqlite3.connect(DB_FILE) as conn:
@@ -117,14 +118,11 @@ def agregar_tarea(tarea, acciones, fecha_inicio, plazo, observaciones, delegada,
         exportar_a_excel()
 
 def editar_tarea(id, tarea, acciones, fecha_inicio, plazo, observaciones, delegada, estado, exportar=True):
-    # Obtener el estado actual para determinar si necesitamos actualizar la fecha_termino
     tarea_actual = obtener_tarea_por_id(id)
     estado_actual = tarea_actual['estado'] if tarea_actual else None
     
-    # Si el estado cambia a Terminada, establecer fecha_termino
     if estado == 'Terminada' and estado_actual != 'Terminada':
         fecha_termino = datetime.now().strftime("%Y-%m-%d")
-    # Si el estado cambia de Terminada a otro, eliminar fecha_termino
     elif estado != 'Terminada' and estado_actual == 'Terminada':
         fecha_termino = None
     else:
@@ -147,10 +145,8 @@ def actualizar_estado(id, nuevo_estado):
     if not tarea:
         return
     
-    # Si el nuevo estado es Terminada y no lo estaba, establecer fecha_termino
     if nuevo_estado == 'Terminada' and tarea['estado'] != 'Terminada':
         fecha_termino = datetime.now().strftime("%Y-%m-%d")
-    # Si cambia de Terminada a otro estado, eliminar fecha_termino
     elif nuevo_estado != 'Terminada' and tarea['estado'] == 'Terminada':
         fecha_termino = None
     else:
@@ -173,40 +169,32 @@ def eliminar_tarea(id, exportar=True):
     if exportar:
         exportar_a_excel()
 
-def exportar_a_excel():
+def exportar_a_excel(nombre_archivo=EXCEL_FILE):
     """Exporta todas las tareas a un archivo Excel"""
     tareas_df = obtener_tareas()
     if not tareas_df.empty:
-        # Crear un DataFrame con las columnas necesarias
         export_df = tareas_df[['id', 'tarea', 'acciones', 'fecha_inicio', 'plazo', 
                               'observaciones', 'estado', 'delegada', 'fecha_termino']].copy()
         
-        # Renombrar columnas para mejor presentación
         export_df.columns = ['ID', 'Tarea', 'Acciones a Realizar', 'Fecha Inicio', 
                             'Plazo', 'Observaciones', 'Estado', 'Delegada a', 'F.Término']
         
-        # Guardar en Excel
-        export_df.to_excel(EXCEL_FILE, index=False)
+        export_df.to_excel(nombre_archivo, index=False)
         return True
     return False
 
 def importar_desde_excel():
-    """Importa tareas desde el archivo Excel a la base de datos"""
     try:
-        # Verificar si el archivo existe
         if not os.path.exists(EXCEL_FILE):
             st.error(f"Archivo {EXCEL_FILE} no encontrado")
             return False
         
-        # Leer el archivo Excel
         excel_df = pd.read_excel(EXCEL_FILE)
         
-        # Verificar si está vacío
         if excel_df.empty:
             st.warning("El archivo Excel está vacío")
             return False
         
-        # Eliminar columnas no reconocidas
         columnas_esperadas = ['ID', 'Tarea', 'Acciones a Realizar', 'Fecha Inicio', 
                              'Plazo', 'Observaciones', 'Estado', 'Delegada a', 'F.Término']
         
@@ -214,7 +202,6 @@ def importar_desde_excel():
             if col not in columnas_esperadas:
                 excel_df = excel_df.drop(columns=[col])
         
-        # Renombrar columnas para coincidir con la base de datos
         column_mapping = {
             'ID': 'id',
             'Tarea': 'tarea',
@@ -228,20 +215,15 @@ def importar_desde_excel():
         }
         excel_df.rename(columns=column_mapping, inplace=True)
         
-        # Obtener tareas existentes en la base de datos
         db_tareas = obtener_tareas()
         db_ids = set(db_tareas['id']) if not db_tareas.empty else set()
         
-        # Contadores para estadísticas
         nuevas = 0
         actualizadas = 0
         
-        # Procesar cada fila del Excel
         for _, row in excel_df.iterrows():
-            # Convertir tipos de datos
             row = row.where(pd.notnull(row), None)
             
-            # Manejar fechas
             fecha_inicio = row['fecha_inicio']
             if isinstance(fecha_inicio, pd.Timestamp):
                 fecha_inicio = fecha_inicio.strftime('%Y-%m-%d')
@@ -254,10 +236,8 @@ def importar_desde_excel():
             if isinstance(fecha_termino, pd.Timestamp):
                 fecha_termino = fecha_termino.strftime('%Y-%m-%d')
             
-            # Verificar si la tarea ya existe en la base de datos
             tarea_id = row['id']
             if tarea_id in db_ids:
-                # Actualizar tarea existente
                 with sqlite3.connect(DB_FILE) as conn:
                     conn.execute('''
                         UPDATE tareas
@@ -278,7 +258,6 @@ def importar_desde_excel():
                     conn.commit()
                 actualizadas += 1
             else:
-                # Insertar como nueva tarea
                 with sqlite3.connect(DB_FILE) as conn:
                     conn.execute('''
                         INSERT INTO tareas (tarea, acciones, fecha_inicio, plazo, 
@@ -297,7 +276,6 @@ def importar_desde_excel():
                     conn.commit()
                 nuevas += 1
         
-        # Exportar después de todas las operaciones para actualizar el Excel
         exportar_a_excel()
         
         return nuevas, actualizadas
@@ -309,7 +287,7 @@ def main():
     st.set_page_config(layout="wide", page_title="Compromisos OCT")
     init_db()
     
-    # Estilos CSS para el encabezado
+    # Estilos CSS
     st.markdown(f"""
     <style>
         .header-container {{
@@ -344,48 +322,36 @@ def main():
             font-size: 20px;
             font-weight: bold;
         }}
-        
-        /* Contenedor principal para alargar la tabla */
         .main-container {{
             display: flex;
             flex-direction: column;
             height: calc(100vh - 150px) !important;
             min-height: 500px !important;
         }}
-        
-        /* Contenedor de la tabla para que ocupe el espacio disponible */
         .table-container {{
             flex: 1;
             display: flex;
             flex-direction: column;
             min-height: 300px;
         }}
-        
-        /* La tabla debe expandirse */
         .stDataFrame, .stDataEditor {{
             flex: 1;
             min-height: 200px;
         }}
-        
-        /* Contenedor de botones al final */
         .button-container {{
             margin-top: auto;
             padding-bottom: 5px !important;
         }}
-        
-        /* Asegurar que los elementos internos se expandan */
         div[data-testid="stVerticalBlock"] {{
             height: 100% !important;
         }}
-        
-        /* Ajustar el contenedor del data editor */
         div[data-testid="stHorizontalBlock"] {{
             height: 100% !important;
         }}
     </style>
     """, unsafe_allow_html=True)
     
-    # Mostrar encabezado
+    # Encabezado
     if img_src:
         st.markdown(f"""
         <div class="header-container">
@@ -397,7 +363,6 @@ def main():
         </div>
         """, unsafe_allow_html=True)
     else:
-        # Fallback si no hay imagen
         st.markdown(f"""
         <div style="display: flex; align-items: center; justify-content: center; 
                     background-color: {COLOR_FONDO}; height: 85px; width: 100%; 
@@ -413,11 +378,9 @@ def main():
         </div>
         """, unsafe_allow_html=True)
     
-    # Exportar inicialmente si no existe el archivo
     if not os.path.exists(EXCEL_FILE):
         exportar_a_excel()
     
-    # Estado de la sesión
     if "tarea_seleccionada" not in st.session_state:
         st.session_state["tarea_seleccionada"] = None
     if "ver_detalle" not in st.session_state:
@@ -429,14 +392,12 @@ def main():
     if "selected_tasks" not in st.session_state:
         st.session_state["selected_tasks"] = []
     if "reset_counter" not in st.session_state:
-        st.session_state["reset_counter"] = 0  # Para resetear formulario
+        st.session_state["reset_counter"] = 0
     if "last_interaction" not in st.session_state:
         st.session_state["last_interaction"] = {"type": None, "id": None}
 
-    # Obtener tareas
     tareas_df = obtener_tareas()
     
-    # Pestañas principales
     tabs = ["Listado de Tareas", "Agregar Tarea"]
     current_tab = st.selectbox(
         "Seleccione una vista:",
@@ -444,32 +405,22 @@ def main():
         index=tabs.index(st.session_state["current_tab"])
     )
     
-    # Contenido de la pestaña de listado
     if current_tab == "Listado de Tareas":
         st.session_state["current_tab"] = "Listado de Tareas"
         
-        # Contenedor principal con altura definida
         with st.container():
             if not tareas_df.empty:
-                # Preprocesar datos para visualización
                 tareas_df['terminado'] = tareas_df['estado'].apply(lambda x: 1 if x == 'Terminada' else 0)
                 tareas_df['delegada_bool'] = tareas_df['delegada'].apply(lambda x: 1 if x and str(x).strip() != '' else 0)
-                
-                # Agregar columna de selección
                 tareas_df['Seleccionar'] = False
                 if st.session_state["selected_tasks"]:
-                    # Mantener selecciones previas
                     tareas_df['Seleccionar'] = tareas_df['id'].isin(st.session_state["selected_tasks"])
-                
-                # Convertir fecha_termino a datetime para mostrar correctamente
                 tareas_df['fecha_termino'] = pd.to_datetime(tareas_df['fecha_termino'], errors='coerce')
                 
                 tareas_display = tareas_df[['Seleccionar', 'id', 'estado', 'tarea', 'acciones', 'terminado', 
                                            'delegada_bool', 'delegada', 'fecha_inicio', 'plazo', 'fecha_termino']]
                 
-                # Contenedor para la tabla que se expande
                 with st.container():
-                    # Mostrar tabla con selección
                     edited_df = st.data_editor(
                         tareas_display,
                         column_config={
@@ -490,7 +441,7 @@ def main():
                         disabled=["id", "estado", "tarea", "acciones", "delegada", 
                                   "fecha_inicio", "plazo", "fecha_termino"],
                         key="editor",
-                        height=580  # Altura inicial mínima
+                        height=580
                     )
 
                 seleccionados_actuales = edited_df[edited_df['Seleccionar'] == True]['id'].tolist()
@@ -511,17 +462,15 @@ def main():
                         actualizar_estado(row['id'], nuevo_estado)
                         st.rerun()
 
-                # Contenedor de botones al final con margen inferior de 5px
+                # --- Botones ---
                 with st.container():
                     st.markdown('<div class="button-container">', unsafe_allow_html=True)
-                    # Botones de acción
-                    col1, col2, col3 = st.columns(3)
+                    col1, col2, col3, col4 = st.columns(4)  # ahora 4 columnas
                     with col1:
                         if st.button("🗑️ Eliminar"):
                             if st.session_state["selected_tasks"]:
                                 for tarea_id in st.session_state["selected_tasks"]:
                                     eliminar_tarea(tarea_id)
-                                # Limpiamos selección y detalle
                                 st.session_state["selected_tasks"] = []
                                 st.session_state["ver_detalle"] = None
                                 st.rerun()
@@ -547,12 +496,23 @@ def main():
                                 st.warning("Solo puedes ver el detalle de una tarea a la vez")
                             else:
                                 st.warning("Selecciona una tarea primero")
-                    st.markdown('</div>', unsafe_allow_html=True)
+                    with col4:
+                        if st.button("📤 Exportar Excel"):
+                            if exportar_a_excel(EXCEL_EXPORTADO):
+                                with open(EXCEL_EXPORTADO, "rb") as f:
+                                    st.download_button(
+                                        label="⬇️ Descargar Excel",
+                                        data=f,
+                                        file_name=EXCEL_EXPORTADO,
+                                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                                    )
+                                st.success("Archivo listo para descargar")
+                            else:
+                                st.warning("No hay tareas para exportar")
                 
-                # Mostrar detalle si está seleccionado
+                # --- Detalle ---
                 if st.session_state["ver_detalle"]:
                     tarea_id = st.session_state["ver_detalle"]
-                    # Obtenemos la tarea de la base de datos actualizada
                     tarea = obtener_tarea_por_id(tarea_id)
                     if tarea is None:
                         st.error("La tarea seleccionada ya no existe")
@@ -562,34 +522,26 @@ def main():
                         with st.expander(f"Detalle de la Tarea: {tarea['tarea']}", expanded=True):
                             st.markdown(f"**Tarea:**\n{tarea['tarea']}")
                             st.divider()
-                            
                             st.markdown("**Acciones a Realizar:**")
                             st.markdown(f"{tarea['acciones']}")
                             st.divider()
-                            
                             st.markdown("**Observaciones:**")
                             st.markdown(f"{tarea['observaciones'] or 'Sin observaciones'}")
                             st.divider()
-                            
                             st.markdown("**Estado:**")
                             st.markdown(f"{tarea['estado']}")
                             st.divider()
-                            
                             st.markdown("**Delegada a:**")
                             st.markdown(f"{tarea['delegada'] or 'No delegada'}")
                             st.divider()
-                            
                             st.markdown("**Fecha Inicio:**")
                             st.markdown(f"{tarea['fecha_inicio']}")
                             st.divider()
-                            
                             st.markdown("**Plazo:**")
                             st.markdown(f"{tarea['plazo'] or 'Sin plazo definido'}")
                             st.divider()
-                            
                             st.markdown("**Fecha Término:**")
                             st.markdown(f"{tarea['fecha_termino'] or 'Tarea aún no finalizada'}")
-                            
                             col1, col2 = st.columns([1, 3])
                             with col1:
                                 if st.button("Cerrar Detalle"):
@@ -598,10 +550,8 @@ def main():
             else:
                 st.info("No hay tareas registradas")
     
-    # Contenido de la pestaña de agregar/editar
-    else:  # "Agregar Tarea"
+    else:  # Agregar Tarea
         st.session_state["current_tab"] = "Agregar Tarea"
-        # Si estamos en modo edición, cargamos la tarea desde la base de datos (actualizada)
         if st.session_state["tarea_seleccionada"]:
             tarea_id = st.session_state["tarea_seleccionada"]
             tarea = obtener_tarea_por_id(tarea_id)
@@ -626,7 +576,6 @@ def main():
         
         st.subheader(f"{'Editar' if modo == 'edición' else 'Agregar'} Tarea")
         
-        # Generar claves únicas para cada widget usando el contador de reset
         key_suffix = f"{modo}_{st.session_state.reset_counter}"
         tarea_key = f"tarea_nombre_{key_suffix}"
         acciones_key = f"acciones_{key_suffix}"
@@ -636,13 +585,11 @@ def main():
         delegada_key = f"delegada_{key_suffix}"
         estado_key = f"estado_{key_suffix}"
         
-        # Formulario
         tarea_nombre = st.text_input("Tarea", value=tarea["tarea"], key=tarea_key)
         acciones = st.text_area("Acciones a Realizar", value=tarea["acciones"], height=150, key=acciones_key)
         
         col1, col2 = st.columns(2)
         with col1:
-            # Convertimos la fecha string a objeto date
             fecha_inicio_val = datetime.strptime(tarea["fecha_inicio"], "%Y-%m-%d").date() if tarea["fecha_inicio"] else datetime.now().date()
             fecha_inicio = st.date_input("F. Inicio", value=fecha_inicio_val, key=fecha_inicio_key)
         with col2:
@@ -656,7 +603,6 @@ def main():
                               index=["Pendiente", "En Proceso", "Terminada"].index(tarea["estado"]) if tarea["estado"] in ["Pendiente", "En Proceso", "Terminada"] else 0, 
                               key=estado_key)
         
-        # Botones de acción - Ahora en 4 columnas
         col_btn1, col_btn2, col_btn3, col_btn4 = st.columns(4)
         with col_btn1:
             if st.button("💾 Guardar"):
@@ -687,7 +633,6 @@ def main():
         
         with col_btn3:
             if st.button("🧹 Limpiar"):
-                # Incrementar contador para generar nuevas claves
                 st.session_state.reset_counter += 1
                 st.rerun()
         
@@ -701,7 +646,6 @@ def main():
                 else:
                     st.error("Error en la importación")
         
-        # Información sobre el archivo Excel
         st.info(f"Todas las tareas se sincronizan automáticamente con el archivo: {EXCEL_FILE}")
         st.info("Usa el botón 'Importar desde Excel' para cargar datos desde este archivo")
 
