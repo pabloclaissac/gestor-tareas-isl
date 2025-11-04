@@ -552,13 +552,32 @@ def main():
 
     tareas_df = obtener_tareas()
     
+    # =========================
+    # Selector de vista (modificado y estilizado)
+    # =========================
+    # CSS para compactar y alinear a la izquierda el selectbox
+    st.markdown("""
+        <style>
+        div[data-baseweb="select"] {
+            width: 220px !important;
+            margin-left: 0 !important;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
     tabs = ["Listado de Tareas", "Agregar Tarea"]
-    current_tab = st.selectbox(
-        "Seleccione una vista:",
-        tabs,
-        index=tabs.index(st.session_state["current_tab"])
-    )
-    
+    # Reemplazamos el selectbox por un contenedor de 5 columnas, selector en la primera
+    col1, col2, col3, col4, col5 = st.columns([1, 1, 1, 1, 1])
+    with col1:
+        current_tab = st.selectbox(
+            "Seleccione una vista:",
+            tabs,
+            index=tabs.index(st.session_state["current_tab"]),
+            label_visibility="collapsed"
+        )
+    # Guardar la selección en session_state (mantener compatibilidad)
+    st.session_state["current_tab"] = current_tab
+
     if current_tab == "Listado de Tareas":
         st.session_state["current_tab"] = "Listado de Tareas"
         
@@ -619,51 +638,72 @@ def main():
                 # --- Botones ---
                 with st.container():
                     st.markdown('<div class="button-container">', unsafe_allow_html=True)
-                    col1, col2, col3, col4 = st.columns(4)  # ahora 4 columnas
-                    with col1:
-                        if st.button("🗑️ Eliminar"):
-                            if st.session_state["selected_tasks"]:
-                                for tarea_id in st.session_state["selected_tasks"]:
-                                    eliminar_tarea(tarea_id)
-                                st.session_state["selected_tasks"] = []
-                                st.session_state["ver_detalle"] = None
-                                st.rerun()
-                            else:
-                                st.warning("Selecciona al menos una tarea")
-                    with col2:
-                        if st.button("✏️ Editar"):
-                            if len(st.session_state["selected_tasks"]) == 1:
-                                tarea_id = st.session_state["selected_tasks"][0]
-                                st.session_state["tarea_seleccionada"] = tarea_id
-                                st.session_state["current_tab"] = "Agregar Tarea"
-                                st.rerun()
-                            elif st.session_state["selected_tasks"]:
-                                st.warning("Solo puedes editar una tarea a la vez")
-                            else:
-                                st.warning("Selecciona una tarea primero")
-                    with col3:
-                        if st.button("👁️ Ver Detalle"):
-                            if len(st.session_state["selected_tasks"]) == 1:
-                                tarea_id = st.session_state["selected_tasks"][0]
-                                st.session_state["ver_detalle"] = tarea_id
-                            elif st.session_state["selected_tasks"]:
-                                st.warning("Solo puedes ver el detalle de una tarea a la vez")
-                            else:
-                                st.warning("Selecciona una tarea primero")
-                    with col4:
-                        if st.button("📤 Exportar Excel"):
-                            if exportar_a_excel(EXCEL_EXPORTADO):
-                                with open(EXCEL_EXPORTADO, "rb") as f:
-                                    st.download_button(
-                                        label="⬇️ Descargar Excel",
-                                        data=f,
-                                        file_name=EXCEL_EXPORTADO,
-                                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                                    )
-                                st.success("Archivo listo para descargar")
-                            else:
-                                st.warning("No hay tareas para exportar")
-                
+
+                    # --- Cambio realizado: dividimos el contenedor en 3 columnas ---
+                    # La columna central agrupa todos los botones (manteniendo la funcionalidad y el diseño)
+                    col_left, col_center, col_right = st.columns([1, 2, 1])
+
+                    # Columna izquierda: espacio (se mantiene para respetar el diseño)
+                    with col_left:
+                        st.markdown("&nbsp;", unsafe_allow_html=True)
+
+                    # Columna central: aquí se agrupan TODOS los botones (en 4 sub-columnas para mantener su separación)
+                    with col_center:
+                        btn_col1, btn_col2, btn_col3, btn_col4 = st.columns([1, 1, 1, 1])
+
+                        with btn_col1:
+                            if st.button("🗑️ Eliminar"):
+                                if st.session_state["selected_tasks"]:
+                                    for tarea_id in st.session_state["selected_tasks"]:
+                                        eliminar_tarea(tarea_id)
+                                    st.session_state["selected_tasks"] = []
+                                    st.session_state["ver_detalle"] = None
+                                    st.rerun()
+                                else:
+                                    st.warning("Selecciona al menos una tarea")
+
+                        with btn_col2:
+                            if st.button("✏️ Editar"):
+                                if len(st.session_state["selected_tasks"]) == 1:
+                                    tarea_id = st.session_state["selected_tasks"][0]
+                                    st.session_state["tarea_seleccionada"] = tarea_id
+                                    st.session_state["current_tab"] = "Agregar Tarea"
+                                    st.rerun()
+                                elif st.session_state["selected_tasks"]:
+                                    st.warning("Solo puedes editar una tarea a la vez")
+                                else:
+                                    st.warning("Selecciona una tarea primero")
+
+                        with btn_col3:
+                            if st.button("👁️ Ver Detalle"):
+                                if len(st.session_state["selected_tasks"]) == 1:
+                                    tarea_id = st.session_state["selected_tasks"][0]
+                                    st.session_state["ver_detalle"] = tarea_id
+                                elif st.session_state["selected_tasks"]:
+                                    st.warning("Solo puedes ver el detalle de una tarea a la vez")
+                                else:
+                                    st.warning("Selecciona una tarea primero")
+
+                        with btn_col4:
+                            if st.button("📤 Exportar Excel"):
+                                if exportar_a_excel(EXCEL_EXPORTADO):
+                                    with open(EXCEL_EXPORTADO, "rb") as f:
+                                        st.download_button(
+                                            label="⬇️ Descargar Excel",
+                                            data=f,
+                                            file_name=EXCEL_EXPORTADO,
+                                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                                        )
+                                    st.success("Archivo listo para descargar")
+                                else:
+                                    st.warning("No hay tareas para exportar")
+
+                    # Columna derecha: espacio (se mantiene para respetar el diseño)
+                    with col_right:
+                        st.markdown("&nbsp;", unsafe_allow_html=True)
+
+                    st.markdown('</div>', unsafe_allow_html=True)
+
                 # --- Detalle ---
                 if st.session_state["ver_detalle"]:
                     tarea_id = st.session_state["ver_detalle"]
